@@ -1,3 +1,4 @@
+import io
 import json
 import os
 
@@ -14,9 +15,9 @@ DATA_PATH = os.path.join(os.path.dirname(__file__), "data", "messages.csv")
 MANDATORY_PATH = os.path.join(os.path.dirname(__file__), "data", "mandatory_demo_ids.csv")
 
 
-@st.cache_data
-def load_data():
-    df = pd.read_csv(DATA_PATH, encoding="utf-8-sig")
+@st.cache_data(show_spinner="Running classification, extraction, and sensitive-info detection...")
+def process(messages_bytes: bytes):
+    df = pd.read_csv(io.BytesIO(messages_bytes), encoding="utf-8-sig")
     df["message"] = df["message"].astype(str)
     df = df.sort_values("timestamp").reset_index(drop=True)
 
@@ -39,30 +40,52 @@ def load_data():
     return pd.DataFrame(rows), all_items, all_sensitive
 
 
-def load_mandatory_ids():
-    if os.path.exists(MANDATORY_PATH):
-        m = pd.read_csv(MANDATORY_PATH, encoding="utf-8-sig")
-        return m["message_id"].tolist()
-    return []
+def parse_mandatory_ids(mandatory_bytes: bytes):
+    m = pd.read_csv(io.BytesIO(mandatory_bytes), encoding="utf-8-sig")
+    return m["message_id"].tolist()
 
 
 st.title("Message Intelligence Demo")
 st.caption(
     "Rule-based classification, task/event extraction, and sensitive-information "
-    "detection over the 900-message dataset. All processing runs locally in this "
-    "app; no message text is sent to any external service."
+    "detection over the chronological message dataset. All processing runs "
+    "locally in this app; no message text is sent to any external service."
 )
 
-if not os.path.exists(DATA_PATH):
-    st.error(
-        "data/messages.csv not found. This dataset is intentionally excluded from "
-        "the public GitHub repo per the assignment rules -- place it in data/ "
-        "before running or deploying this app."
-    )
+# ---------------------------------------------------------------- load data
+messages_bytes = None
+mandatory_bytes = None
+
+if os.path.exists(DATA_PATH):
+    with open(DATA_PATH, "rb") as f:
+        messages_bytes = f.read()
+    if os.path.exists(MANDATORY_PATH):
+        with open(MANDATORY_PATH, "rb") as f:
+            mandatory_bytes = f.read()
+
+with st.sidebar:
+    st.header("Dataset")
+    if messages_bytes is not None:
+        st.success("Loaded messages.csv from local data/ folder.")
+    else:
+        st.info(
+            "The dataset is intentionally excluded from the public GitHub repo. "
+            "Upload the two CSV files here to run the demo -- they stay in this "
+            "browser session only and are never written to disk or persisted."
+        )
+        uploaded_messages = st.file_uploader("messages.csv", type="csv")
+        uploaded_mandatory = st.file_uploader("mandatory_demo_ids.csv", type="csv")
+        if uploaded_messages is not None:
+            messages_bytes = uploaded_messages.getvalue()
+        if uploaded_mandatory is not None:
+            mandatory_bytes = uploaded_mandatory.getvalue()
+
+if messages_bytes is None:
+    st.warning("Upload messages.csv in the sidebar to run the demo.")
     st.stop()
 
-df, items, sensitive_findings = load_data()
-mandatory_ids = load_mandatory_ids()
+df, items, sensitive_findings = process(messages_bytes)
+mandatory_ids = parse_mandatory_ids(mandatory_bytes) if mandatory_bytes is not None else []
 
 tab1, tab2, tab3, tab4 = st.tabs(
     ["Classification", "Tasks & Events", "Sensitive Information", "Mandatory Demo IDs"]
@@ -144,7 +167,7 @@ with tab4:
             use_container_width=True, height=520,
         )
     else:
-        st.warning("mandatory_demo_ids.csv not found in data/.")
+        st.warning("Upload mandatory_demo_ids.csv in the sidebar to see this view.")
 
 st.divider()
 st.caption(
