@@ -1,0 +1,12 @@
+# Dataset must not be published in the public repository per assignment rules
+data/messages.csv
+data/mandatory_demo_ids.csv
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Streamlit
+.streamlit/secrets.toml
